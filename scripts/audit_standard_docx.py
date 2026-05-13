@@ -85,6 +85,34 @@ def style_exists(styles_xml: str, names: dict[str, str], style_id: str, expected
     return any(expected in name.lower() for name in names.values())
 
 
+def bullet_numbering_issues(numbering_xml: str) -> list[str]:
+    if not numbering_xml:
+        return []
+    try:
+        root = ET.fromstring(numbering_xml.encode("utf-8"))
+    except ET.ParseError:
+        return []
+
+    issues: list[str] = []
+    unsafe_fonts = {"symbol", "wingdings", "wingdings 2", "wingdings 3"}
+    for level in root.findall(".//w:lvl", NS):
+        num_fmt = level.find("w:numFmt", NS)
+        level_text = level.find("w:lvlText", NS)
+        is_bullet = (
+            num_fmt is not None
+            and num_fmt.attrib.get(qn("w:val")) == "bullet"
+            or level_text is not None
+            and level_text.attrib.get(qn("w:val")) in {"●", "○", "•", "·"}
+        )
+        if not is_bullet:
+            continue
+        fonts = level.find("w:rPr/w:rFonts", NS)
+        font_values = [value.lower() for value in (fonts.attrib.values() if fonts is not None else [])]
+        if any(value in unsafe_fonts for value in font_values):
+            issues.append("项目符号编号使用 Symbol/Wingdings 字体，WPS 中可能显示为乱码")
+    return issues
+
+
 def audit(path: Path) -> dict[str, object]:
     if not path.exists():
         raise SystemExit(f"input not found: {path}")
@@ -94,7 +122,8 @@ def audit(path: Path) -> dict[str, object]:
         names = set(z.namelist())
         document = ET.fromstring(z.read("word/document.xml"))
         styles = z.read("word/styles.xml").decode("utf-8", errors="ignore") if "word/styles.xml" in names else ""
-        numbering = "word/numbering.xml" in names
+        numbering_xml = z.read("word/numbering.xml").decode("utf-8", errors="ignore") if "word/numbering.xml" in names else ""
+        numbering = bool(numbering_xml)
         footers = [n for n in names if n.startswith("word/footer") and n.endswith(".xml")]
 
     names_by_id = style_name_map(styles)
@@ -132,6 +161,8 @@ def audit(path: Path) -> dict[str, object]:
 
     if not numbering:
         findings.append(("high", "缺少 numbering.xml，自动编号可能不可用"))
+    for issue in bullet_numbering_issues(numbering_xml):
+        findings.append(("medium", issue))
 
     if not footers:
         findings.append(("medium", "未发现页脚文件，页码可能缺失"))

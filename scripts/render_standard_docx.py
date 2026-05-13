@@ -459,6 +459,46 @@ def numbering_run_properties_by_style(numbering_xml: bytes | None) -> dict[str, 
     return result
 
 
+def ensure_child(parent: ET.Element, tag: str) -> ET.Element:
+    child = parent.find(tag, NS)
+    if child is None:
+        child = ET.SubElement(parent, qn(tag))
+    return child
+
+
+def harmonize_bullet_numbering_definitions(numbering_xml: bytes | None) -> bytes | None:
+    if not numbering_xml:
+        return numbering_xml
+    try:
+        root = ET.fromstring(numbering_xml)
+    except ET.ParseError:
+        return numbering_xml
+
+    for level in root.findall(".//w:lvl", NS):
+        num_fmt = level.find("w:numFmt", NS)
+        level_text = level.find("w:lvlText", NS)
+        is_bullet = (
+            num_fmt is not None
+            and num_fmt.get(qn("w:val")) == "bullet"
+            or level_text is not None
+            and level_text.get(qn("w:val")) in {"●", "○", "•", "·"}
+        )
+        if not is_bullet:
+            continue
+
+        rpr = ensure_child(level, "w:rPr")
+        fonts = ensure_child(rpr, "w:rFonts")
+        for attr in ("w:ascii", "w:hAnsi", "w:eastAsia", "w:cs"):
+            fonts.set(qn(attr), "微软雅黑")
+
+        size = ensure_child(rpr, "w:sz")
+        size.set(qn("w:val"), size.get(qn("w:val")) or "24")
+        size_cs = ensure_child(rpr, "w:szCs")
+        size_cs.set(qn("w:val"), size.get(qn("w:val")) or "24")
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
+
+
 def harmonize_heading_style_definitions(
     styles_xml: bytes | None,
     numbering_xml: bytes | None,
@@ -620,6 +660,9 @@ def render(input_path: Path, output_dir: Path, filename: str | None, template_pa
     )
     if harmonized_styles is not None:
         files["word/styles.xml"] = harmonized_styles
+    harmonized_numbering = harmonize_bullet_numbering_definitions(files.get("word/numbering.xml"))
+    if harmonized_numbering is not None:
+        files["word/numbering.xml"] = harmonized_numbering
     root.remove(old_body)
     root.append(build_body(template_body, files.get("word/styles.xml"), meta, blocks))
     files["word/document.xml"] = ET.tostring(root, encoding="utf-8", xml_declaration=True)

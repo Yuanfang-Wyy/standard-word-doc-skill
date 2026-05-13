@@ -69,6 +69,7 @@ scripts/check_dependencies.sh
 - Use Heading 1 to Heading 4 from the template for document hierarchy. Do not hand-write chapter numbers into Markdown.
 - Generate headings by cloning the template's heading paragraph prototypes, replacing text, and synchronizing heading style definitions with the prototype or numbering run properties so automatic numbering and heading text keep the same font, size and paragraph rules in Word/WPS.
 - Tables must inherit the template's table properties, first-row cell properties, body cell properties and alternating row properties when available.
+- Bullet numbering must not use Symbol or Wingdings fonts, because WPS may render those bullets as garbled characters. Normalize bullet numbering fonts during generation.
 - Body copy must be formal, concise, professional, consulting-style and technical-document-style; avoid 口语化、自媒体语气、ChatGPT 式总结腔 and repetitive "首先、其次、最后".
 - Do not use Pages as the finalization engine.
 - Do not require LibreOffice for default generation.
