@@ -26,13 +26,25 @@ command -v python3 >/dev/null 2>&1 || {
   exit 1
 }
 
-[[ -f "${TEMPLATE}" ]] || {
-  echo "missing template: ${TEMPLATE}" >&2
+python3 - <<'PY' >/dev/null 2>&1 || {
+import docx
+PY
+  echo "missing dependency: python-docx" >&2
+  echo "install: pip install python-docx" >&2
   exit 1
 }
 
 echo "python3: $(command -v python3)"
-echo "template: ${TEMPLATE}"
+python3 - <<'PY'
+import docx
+print(f"python-docx: {docx.__version__}")
+PY
+if [[ -f "${TEMPLATE}" ]]; then
+  echo "template: ${TEMPLATE}"
+else
+  echo "template: optional dependency not found"
+  echo "fallback: scripts will create a DOCX from the default style guide"
+fi
 if SOFFICE="$(find_soffice)"; then
   echo "libreoffice: ${SOFFICE}"
 else

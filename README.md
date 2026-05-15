@@ -8,7 +8,7 @@
 
 - 生成实施方案、建设方案、必要性分析、测试报告、总结报告、服务单材料等正式 Word 文档。
 - 将 Markdown 草稿转换成符合标准模板的 `.docx`。
-- 审计已有 `.docx` 是否包含封面字段、标题层级、目录字段、编号体系和页脚页码。
+- 审计并修复已有 `.docx` 的标题、项目符号、字体、硬换行、表格宽度和空段落问题。
 - 团队统一 Word 材料格式，减少人工排版和模板走样。
 
 ## 安装
@@ -69,6 +69,18 @@ git clone https://github.com/Yuanfang-Wyy/standard-word-doc-skill.git
 python3 scripts/render_standard_docx.py examples/sanitized-template-source.md
 ```
 
+审计已有 Word：
+
+```bash
+python3 scripts/audit_standard_docx.py input.docx
+```
+
+直接修复已有 Word，不覆盖原文件：
+
+```bash
+python3 scripts/repair_standard_docx.py input.docx
+```
+
 默认输出目录：
 
 ```text
@@ -111,10 +123,11 @@ date: 二〇二六年
 
 ## 依赖说明
 
-默认只需要：
+默认需要：
 
 ```bash
 python3
+pip install python-docx
 ```
 
 检查依赖：
@@ -145,5 +158,6 @@ standard-word-doc-skill/
     ├── audit_standard_docx.py
     ├── check_dependencies.sh
     ├── finalize_docx.sh
+    ├── repair_standard_docx.py
     └── render_standard_docx.py
 ```

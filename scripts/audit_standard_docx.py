@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit a DOCX against the standard Word material rules."""
+"""Audit a DOCX against the standard Word formatting checklist."""
 
 from __future__ import annotations
 
@@ -7,12 +7,32 @@ import argparse
 import re
 import zipfile
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+try:
+    from docx import Document
+except ImportError as exc:  # pragma: no cover
+    raise SystemExit("missing dependency: python-docx. Install with: pip install python-docx") from exc
+
+
+DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "AI-Stack-Outputs" / "word-docs"
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": W_NS}
-DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "AI-Stack-Outputs" / "word-docs"
+
+UNICODE_BULLETS = tuple("•·◆▪●○■□—–")
+UNSAFE_FONTS = {"symbol", "wingdings", "wingdings 2", "wingdings 3"}
+
+
+@dataclass
+class Issue:
+    rule_id: str
+    severity: str
+    location: str
+    message: str
+    action: str
+    auto_fixable: bool
 
 
 def qn(name: str) -> str:
@@ -22,52 +42,21 @@ def qn(name: str) -> str:
     return f"{{{W_NS}}}{tag}"
 
 
-def para_text(p: ET.Element) -> str:
-    return "".join(t.text or "" for t in p.findall(".//w:t", NS)).strip()
+def paragraph_text(paragraph) -> str:
+    return paragraph.text.strip()
 
 
-def style_id(p: ET.Element) -> str:
-    el = p.find("./w:pPr/w:pStyle", NS)
-    return el.attrib.get(qn("w:val"), "") if el is not None else ""
+def style_name(paragraph) -> str:
+    return (paragraph.style.name if paragraph.style is not None else "").lower()
 
 
-def has_field(root: ET.Element, keyword: str) -> bool:
-    for instr in root.findall(".//w:instrText", NS):
-        if instr.text and keyword.upper() in instr.text.upper():
-            return True
-    return False
+def is_heading(paragraph) -> bool:
+    name = style_name(paragraph)
+    return name.startswith("heading") or name.startswith("标题")
 
 
-def compact_text(text: str) -> str:
-    return re.sub(r"\s+", "", text)
-
-
-def style_name_map(styles_xml: str) -> dict[str, str]:
-    if not styles_xml:
-        return {}
-    try:
-        root = ET.fromstring(styles_xml.encode("utf-8"))
-    except ET.ParseError:
-        return {}
-    result: dict[str, str] = {}
-    for style in root.findall(".//w:style", NS):
-        sid = style.attrib.get(qn("w:styleId"), "")
-        name_el = style.find("w:name", NS)
-        if sid and name_el is not None:
-            result[sid] = name_el.attrib.get(qn("w:val"), "")
-    return result
-
-
-def heading_level(style: str, names: dict[str, str]) -> int | None:
-    name = names.get(style, "").lower()
-    candidates = {
-        "2": 1,
-        "3": 2,
-        "4": 3,
-        "5": 4,
-    }
-    if style in candidates:
-        return candidates[style]
+def heading_level(paragraph) -> int | None:
+    name = style_name(paragraph)
     match = re.search(r"heading\s*([1-4])", name)
     if match:
         return int(match.group(1))
@@ -78,145 +67,210 @@ def heading_level(style: str, names: dict[str, str]) -> int | None:
     return None
 
 
-def style_exists(styles_xml: str, names: dict[str, str], style_id: str, expected_name: str) -> bool:
-    if f'w:styleId="{style_id}"' in styles_xml:
-        return True
-    expected = expected_name.lower()
-    return any(expected in name.lower() for name in names.values())
+def is_body(paragraph) -> bool:
+    if is_heading(paragraph):
+        return False
+    name = style_name(paragraph)
+    if name in {"title", "footer"} or "toc" in name or "table" in name:
+        return False
+    return not name.startswith("list") and paragraph_text(paragraph) != ""
 
 
-def bullet_numbering_issues(numbering_xml: str) -> list[str]:
-    if not numbering_xml:
-        return []
+def location_for(index: int, paragraph) -> str:
+    text = paragraph_text(paragraph)
+    if is_heading(paragraph) and text:
+        return f"标题：{text[:60]}"
+    if text:
+        return f"段落 {index}: {text[:60]}"
+    return f"段落 {index}"
+
+
+def run_size_pt(run) -> float | None:
+    if run.font.size is not None:
+        return round(float(run.font.size.pt), 1)
     try:
-        root = ET.fromstring(numbering_xml.encode("utf-8"))
+        if run.style and run.style.font.size is not None:
+            return round(float(run.style.font.size.pt), 1)
+    except Exception:
+        return None
+    return None
+
+
+def run_font_names(run) -> set[str]:
+    names: set[str] = set()
+    if run.font.name:
+        names.add(run.font.name.lower())
+    rpr = run._element.rPr
+    if rpr is not None and rpr.rFonts is not None:
+        for value in rpr.rFonts.attrib.values():
+            if value:
+                names.add(value.lower())
+    return names
+
+
+def has_hard_break(paragraph) -> bool:
+    for br in paragraph._p.xpath(".//w:br"):
+        if br.get(qn("w:type")) not in {"page", "column"}:
+            return True
+    return "\v" in paragraph.text
+
+
+def looks_manual_numbered(text: str) -> bool:
+    patterns = [
+        r"^\s*\d+(?:\.\d+)*[、.]\s+",
+        r"^\s*[（(][一二三四五六七八九十\d]+[）)]",
+        r"^\s*第[一二三四五六七八九十百千万\d]+[章节部分篇]",
+    ]
+    return any(re.search(pattern, text) for pattern in patterns)
+
+
+def looks_fake_heading(paragraph) -> bool:
+    if is_heading(paragraph) or style_name(paragraph) == "title" or not paragraph_text(paragraph):
+        return False
+    for run in paragraph.runs:
+        size = run_size_pt(run)
+        if run.bold and size is not None and size >= 14:
+            return True
+    return False
+
+
+def has_chinese_english_spacing_issue(text: str) -> bool:
+    return bool(re.search(r"[\u4e00-\u9fff][A-Za-z]|[A-Za-z][\u4e00-\u9fff]", text))
+
+
+def docx_xml(path: Path, name: str) -> str:
+    with zipfile.ZipFile(path) as zf:
+        if name not in zf.namelist():
+            return ""
+        return zf.read(name).decode("utf-8", errors="ignore")
+
+
+def has_percent_table_width(path: Path) -> bool:
+    xml = docx_xml(path, "word/document.xml")
+    if not xml:
+        return False
+    try:
+        root = ET.fromstring(xml.encode("utf-8"))
     except ET.ParseError:
-        return []
-
-    issues: list[str] = []
-    unsafe_fonts = {"symbol", "wingdings", "wingdings 2", "wingdings 3"}
-    for level in root.findall(".//w:lvl", NS):
-        num_fmt = level.find("w:numFmt", NS)
-        level_text = level.find("w:lvlText", NS)
-        is_bullet = (
-            num_fmt is not None
-            and num_fmt.attrib.get(qn("w:val")) == "bullet"
-            or level_text is not None
-            and level_text.attrib.get(qn("w:val")) in {"●", "○", "•", "·"}
-        )
-        if not is_bullet:
-            continue
-        fonts = level.find("w:rPr/w:rFonts", NS)
-        font_values = [value.lower() for value in (fonts.attrib.values() if fonts is not None else [])]
-        if any(value in unsafe_fonts for value in font_values):
-            issues.append("项目符号编号使用 Symbol/Wingdings 字体，WPS 中可能显示为乱码")
-    return issues
+        return 'w:type="pct"' in xml
+    for tbl_w in root.findall(".//w:tblW", NS):
+        if tbl_w.get(qn("w:type")) == "pct":
+            return True
+    return False
 
 
-def audit(path: Path) -> dict[str, object]:
+def has_page_number_field(path: Path) -> bool:
+    with zipfile.ZipFile(path) as zf:
+        names = [n for n in zf.namelist() if n == "word/document.xml" or n.startswith("word/footer")]
+        for name in names:
+            xml = zf.read(name).decode("utf-8", errors="ignore")
+            if re.search(r"<w:instrText[^>]*>\s*PAGE\s*</w:instrText>", xml):
+                return True
+            if re.search(r'w:instr="[^"]*PAGE', xml):
+                return True
+    return False
+
+
+def collect_issues(path: Path) -> list[Issue]:
     if not path.exists():
         raise SystemExit(f"input not found: {path}")
     if path.suffix.lower() != ".docx":
-        raise SystemExit("only .docx is supported in v1")
-    with zipfile.ZipFile(path) as z:
-        names = set(z.namelist())
-        document = ET.fromstring(z.read("word/document.xml"))
-        styles = z.read("word/styles.xml").decode("utf-8", errors="ignore") if "word/styles.xml" in names else ""
-        numbering_xml = z.read("word/numbering.xml").decode("utf-8", errors="ignore") if "word/numbering.xml" in names else ""
-        numbering = bool(numbering_xml)
-        footers = [n for n in names if n.startswith("word/footer") and n.endswith(".xml")]
+        raise SystemExit("only .docx is supported")
 
-    names_by_id = style_name_map(styles)
-    paragraphs = document.findall(".//w:p", NS)
-    texts = [para_text(p) for p in paragraphs]
-    styled = [(style_id(p), para_text(p)) for p in paragraphs if para_text(p)]
-    style_counts = Counter(s for s, _ in styled)
-    headings = [(heading_level(s, names_by_id), s, t) for s, t in styled if heading_level(s, names_by_id)]
-    findings: list[tuple[str, str]] = []
+    doc = Document(str(path))
+    issues: list[Issue] = []
+    body_sizes: list[float] = []
 
-    joined = "\n".join(texts[:60])
-    compact_joined = compact_text(joined)
-    required_cover_fields = {
-        "编制单位": ["编制单位"],
-        "文件密级": ["文件密级"],
-        "版本": ["版本", "版本号"],
-        "日期": ["日期", "编制日期"],
-    }
-    for label, aliases in required_cover_fields.items():
-        if not any(compact_text(alias) in compact_joined for alias in aliases):
-            findings.append(("high", f"封面缺少字段：{label}"))
+    for index, paragraph in enumerate(doc.paragraphs, start=1):
+        text = paragraph_text(paragraph)
+        loc = location_for(index, paragraph)
+        stripped = text.lstrip()
 
-    if not headings:
-        findings.append(("high", "未识别到标准标题样式 heading 1-4"))
+        if stripped.startswith(UNICODE_BULLETS):
+            issues.append(Issue("E001", "错误", loc, "段落开头使用 Unicode bullet 字符。", "删除符号并应用 Word List Bullet 样式。", True))
 
-    prev_level = 0
-    for level, _style, text in headings:
-        assert level is not None
-        if prev_level and level > prev_level + 1:
-            findings.append(("medium", f"标题层级跳级：{text}"))
-        prev_level = level
+        if text and looks_manual_numbered(text) and not is_heading(paragraph):
+            issues.append(Issue("W004", "警告", loc, "正文段落中存在手动编号。", "需人工确认是否改为 Heading 样式或有序列表。", False))
 
-    if not has_field(document, "TOC") and "目  录" not in "\n".join(texts[:80]):
-        findings.append(("medium", "未识别到目录或 TOC 字段"))
+        if looks_fake_heading(paragraph):
+            issues.append(Issue("E002", "错误", loc, "使用正文样式加粗和大字号模拟标题。", "按字号映射为 Heading 1-4。", True))
 
-    if not numbering:
-        findings.append(("high", "缺少 numbering.xml，自动编号可能不可用"))
-    for issue in bullet_numbering_issues(numbering_xml):
-        findings.append(("medium", issue))
+        for run in paragraph.runs:
+            unsafe = run_font_names(run) & UNSAFE_FONTS
+            if unsafe:
+                issues.append(Issue("E003", "错误", loc, f"使用禁止字体：{', '.join(sorted(unsafe))}。", "替换为 Arial/微软雅黑。", True))
+            if is_body(paragraph):
+                if any("courier" in name for name in run_font_names(run)):
+                    continue
+                size = run_size_pt(run)
+                if size is not None:
+                    body_sizes.append(size)
 
-    if not footers:
-        findings.append(("medium", "未发现页脚文件，页码可能缺失"))
+        if has_hard_break(paragraph):
+            issues.append(Issue("E004", "错误", loc, "段落中存在硬换行。", "拆分为独立段落。", True))
 
-    required_styles = {
-        "2": "一级标题",
-        "3": "二级标题",
-        "4": "三级标题",
-        "19": "Body Ref",
-        "20": "Cover Meta Ref",
-        "21": "Table Text Ref",
-    }
-    for sid, label in required_styles.items():
-        if not style_exists(styles, names_by_id, sid, label):
-            findings.append(("low", f"与当前标准模板样式不完全一致：{label}"))
+        if "\u3000" in text:
+            issues.append(Issue("S001", "建议", loc, "正文中存在全角空格。", "建议替换为半角空格。", False))
 
-    has_body_style = style_counts.get("19", 0) > 0 or any("body ref" in names_by_id.get(s, "").lower() for s in style_counts)
-    if not has_body_style:
-        findings.append(("low", "未识别到 Body Ref 正文样式，可能使用了其他正文样式"))
+        if text and has_chinese_english_spacing_issue(text):
+            issues.append(Issue("S002", "建议", loc, "中英文之间缺少空格。", "建议人工检查，避免误改专有名词。", False))
 
-    return {
-        "path": str(path),
-        "paragraph_count": len([t for t in texts if t]),
-        "heading_count": len(headings),
-        "style_counts": dict(style_counts),
-        "has_toc_field": has_field(document, "TOC"),
-        "has_numbering": numbering,
-        "footer_count": len(footers),
-        "headings": headings[:80],
-        "findings": findings,
-    }
+    unique_sizes = {size for size in body_sizes if size > 0}
+    if len(unique_sizes) > 2:
+        issues.append(Issue("W001", "警告", "全文", f"正文字号存在多种值：{', '.join(map(str, sorted(unique_sizes)))}pt。", "统一正文为 11pt。", True))
+
+    if has_percent_table_width(path):
+        issues.append(Issue("W002", "警告", "表格", "存在百分比表格宽度，WPS/Google Docs 中可能变形。", "转换为 DXA 固定宽度。", True))
+
+    empty_run = 0
+    for index, paragraph in enumerate(doc.paragraphs, start=1):
+        if paragraph_text(paragraph):
+            empty_run = 0
+            continue
+        empty_run += 1
+        if empty_run >= 2:
+            issues.append(Issue("W003", "警告", f"段落 {index}", "存在连续空段落。", "保留一个空段落，删除多余空段落。", True))
+
+    previous_level = 0
+    for paragraph in doc.paragraphs:
+        level = heading_level(paragraph)
+        if level is None:
+            continue
+        if previous_level and level > previous_level + 1:
+            issues.append(Issue("W005", "警告", f"标题：{paragraph_text(paragraph)[:60]}", f"标题层级从 H{previous_level} 跳到 H{level}。", "报告给用户确认，不自动修复。", False))
+        previous_level = level
+
+    if not has_page_number_field(path):
+        issues.append(Issue("S003", "建议", "页脚", "文档未检测到页码字段。", "建议添加页码字段或刷新模板页脚。", False))
+
+    return issues
 
 
-def write_report(result: dict[str, object], output: Path) -> None:
+def summarize(issues: list[Issue]) -> Counter:
+    return Counter(issue.severity for issue in issues)
+
+
+def write_report(path: Path, issues: list[Issue], output: Path) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
-    findings = result["findings"]
-    headings = result["headings"]
-    with output.open("w", encoding="utf-8") as f:
-        f.write(f"# Word 标准规范审计报告\n\n")
-        f.write(f"- 文件：`{result['path']}`\n")
-        f.write(f"- 段落数：{result['paragraph_count']}\n")
-        f.write(f"- 标题数：{result['heading_count']}\n")
-        f.write(f"- TOC 字段：{'yes' if result['has_toc_field'] else 'no'}\n")
-        f.write(f"- 自动编号文件：{'yes' if result['has_numbering'] else 'no'}\n")
-        f.write(f"- 页脚文件数：{result['footer_count']}\n\n")
-        f.write("## 发现问题\n\n")
-        if findings:
-            for severity, message in findings:
-                f.write(f"- [{severity}] {message}\n")
-        else:
-            f.write("- 未发现高优先级结构问题。\n")
-        f.write("\n## 标题预览\n\n")
-        for level, _style, text in headings:
-            f.write(f"- H{level} {text}\n")
+    counts = summarize(issues)
+    with output.open("w", encoding="utf-8") as fh:
+        fh.write("# Word 格式审计报告\n\n")
+        fh.write(f"- 文件：`{path}`\n")
+        fh.write(f"- 问题总数：{len(issues)}\n")
+        fh.write(f"- 错误：{counts.get('错误', 0)}\n")
+        fh.write(f"- 警告：{counts.get('警告', 0)}\n")
+        fh.write(f"- 建议：{counts.get('建议', 0)}\n\n")
+
+        for severity in ("错误", "警告", "建议"):
+            fh.write(f"## {severity}\n\n")
+            filtered = [issue for issue in issues if issue.severity == severity]
+            if not filtered:
+                fh.write("- 无。\n\n")
+                continue
+            for issue in filtered:
+                fix = "可自动修复" if issue.auto_fixable else "需人工确认"
+                fh.write(f"- `{issue.rule_id}` {issue.location}：{issue.message} {issue.action}（{fix}）\n")
+            fh.write("\n")
 
 
 def main() -> int:
@@ -224,9 +278,11 @@ def main() -> int:
     parser.add_argument("input", type=Path)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    result = audit(args.input)
-    output = args.output or DEFAULT_OUTPUT_DIR / f"{args.input.stem}_audit.md"
-    write_report(result, output)
+
+    input_path = args.input.expanduser()
+    output = args.output.expanduser() if args.output else DEFAULT_OUTPUT_DIR / f"{input_path.stem}_audit.md"
+    issues = collect_issues(input_path)
+    write_report(input_path, issues, output)
     print(output)
     return 0
 

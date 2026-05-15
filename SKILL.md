@@ -1,78 +1,162 @@
 ---
 name: standard-word-doc
-description: Use when creating, auditing, or standardizing formal Chinese Word materials such as implementation plans, necessity reports, construction plans, test reports, service summaries, and official review documents that should follow the standard Word template.
+description: >
+  Use when a Word/.docx document must be generated, converted, standardized,
+  audited, or repaired; when Markdown, LLMWiki, API design, implementation
+  plans, reports, or formal Chinese materials need reliable Word formatting;
+  or when headings, bullets, tables, fonts, spacing, page numbers, WPS/Google
+  Docs compatibility, or "word排版乱了/格式不对/转docx/fix word formatting"
+  quality matters.
 ---
 
-# Standard Word Doc
+# Standard Word Doc Skill
 
-## Purpose
+## Core Principle
 
-Use this skill to produce or inspect formal `.docx` materials that must follow the standard Word template in `assets/standard-word-template.docx`.
+This skill is a document template engine. Format consistency has priority over
+content richness. Prefer deterministic `.docx` generation and repair over
+manual visual tweaks.
 
-The generator is a document template engine, not a visual design engine. Format fidelity has higher priority than content richness: all generated documents must inherit the bundled template's cover, heading styles, numbering, body style, table style, page settings, header/footer, TOC field and page-number fields.
+When available, inherit `assets/standard-word-template.docx`. If the template is
+missing, use the default style specification in `references/style-guide.md`
+instead of stopping.
 
-Default generation has no LibreOffice dependency. It creates a standard `.docx` from the bundled template and tells the user whether the TOC/page fields may need updating in Word/WPS. If LibreOffice is available, `scripts/finalize_docx.sh` can optionally refresh fields automatically.
+## Workflow Decision
 
-## Common Requests
+Classify the task before acting:
 
-- "按标准规范写一份 Word"
-- "把这个材料调整成标准规范格式"
-- "根据这些要点生成正式实施方案"
-- "检查这份 Word 是否符合标准模板"
-- "把 Markdown 草稿转成正式报审 Word"
+| User request | Pipeline |
+| --- | --- |
+| User provides requirements, notes, outline, or asks for a new Word document | Pipeline A: Generate |
+| User provides Markdown text, `.md`, LLMWiki output, API design Markdown, or asks to convert to Word | Pipeline B: Markdown to DOCX |
+| User provides an existing `.docx` and asks to check, fix, repair, standardize, or audit formatting | Pipeline C: Audit and Repair |
 
-## Inputs
+If the request mixes pipelines, run them in order. For example: convert Markdown
+to `.docx`, then audit/repair the generated `.docx`.
 
-For generation, prefer Markdown with:
+## Pipeline A: Generate
 
-- One `#` title for the project or document title
-- Optional frontmatter or key-value metadata for `document_type`, `subtitle`, `organization`, `classification`, `version`, `date`
-- `##` to `#####` headings for chapter levels
-- Paragraphs, bullet lists, and simple Markdown tables
+1. Identify document type: implementation plan, construction plan, test report,
+   summary report, API detail design, data governance report, or other.
+2. Organize content into H1-H4 structure. Do not hard-code chapter numbers in
+   body text; use Word Heading styles.
+3. Write a temporary Markdown file with frontmatter when useful:
 
-For auditing, provide a `.docx` file path.
+```markdown
+---
+title: 大数据平台接口详细设计
+document_type: 详细设计文档
+organization: XXXX单位
+version: V1.0
+date: 2026年05月15日
+---
+```
 
-## Workflow
-
-1. Read `references/style-guide.md` for formatting rules.
-2. If document type matters, read `references/document-types.md`.
-3. Run `scripts/check_dependencies.sh` to verify Python and the bundled template.
-4. For generation, run `scripts/render_standard_docx.py` to create a `.docx`; do not hand-design cover, headings or tables outside the template.
-5. If LibreOffice is available and the user wants automatic field refresh, run `scripts/finalize_docx.sh`.
-6. Deliver the generated file path and clearly state whether field refresh was automatic or should be done in Word/WPS.
-7. For auditing, run `scripts/audit_standard_docx.py` and return the audit report path plus the highest-risk findings.
-
-## Required Commands
-
-Generate:
+4. Run:
 
 ```bash
 python3 scripts/render_standard_docx.py input.md --output-dir "$HOME/Documents/AI-Stack-Outputs/word-docs"
 ```
 
-Audit:
+5. Return the output path and state whether TOC/page fields need refreshing in
+   Word/WPS or via `scripts/finalize_docx.sh`.
+
+## Pipeline B: Markdown To DOCX
+
+1. If the user pasted Markdown, save it to a temporary `.md` file.
+2. Preserve semantic structure: `#` to `####` for H1-H4, Markdown tables for
+   tables, `-`/`*`/`+` for bullets, and `1.` for ordered lists.
+3. For LLMWiki or API detail design content, normalize overly wide tables and
+   fenced JSON/SQL/Java blocks before rendering. Prefer formal tables for API
+   metadata, request parameters, response fields, error codes, and examples.
+4. Run `scripts/render_standard_docx.py`. The script handles frontmatter,
+   headings, body paragraphs, bullet lists, ordered lists, tables, and fenced
+   code blocks.
+5. Do not use Unicode bullet characters such as `•`, `·`, `◆`, `▪`, or `—` as
+   manual bullets. Use Word list styles.
+
+## Pipeline C: Audit And Repair
+
+For audit only:
 
 ```bash
-python3 scripts/audit_standard_docx.py input.docx --output "$HOME/Documents/AI-Stack-Outputs/word-docs/audit.md"
+python3 scripts/audit_standard_docx.py input.docx --output "$HOME/Documents/AI-Stack-Outputs/word-docs/input_audit.md"
 ```
 
-Dependency check:
+For direct repair:
 
 ```bash
-scripts/check_dependencies.sh
+python3 scripts/repair_standard_docx.py input.docx
 ```
+
+Repair output must not overwrite the source file. The repaired file uses the
+`_repaired.docx` suffix and a companion `_repair_summary.md` explains what was
+changed and what still requires human confirmation.
+
+## Format Checklist
+
+Use this checklist for both auditing and repair. See
+`references/style-guide.md` for exact numeric style values.
+
+### Errors: Repair Automatically
+
+- Unicode bullet characters at paragraph start -> remove the character and
+  apply Word `List Bullet`.
+- Body paragraph using inline bold plus size >= 14pt as a fake heading -> apply
+  the matching Heading style.
+- Symbol, Wingdings, Wingdings 2, or Wingdings 3 fonts -> replace with
+  Arial/微软雅黑.
+- Hard line breaks inside a paragraph -> split into independent paragraphs.
+
+### Warnings: Repair When Safe And Report
+
+- Body text uses more than two different font sizes -> normalize body runs to
+  11pt.
+- Table width uses percent values -> convert tables to fixed DXA widths.
+- Consecutive empty paragraphs -> keep one and remove extras.
+
+### Needs Human Confirmation: Report Only
+
+- Manual numbering such as `1.`, `（一）`, or `第一章` written in body style.
+- Heading hierarchy jumps, such as H1 directly followed by H3.
+- Missing page-number field.
+- Full-width spaces or missing Chinese-English spacing in body text.
+
+## Default Style Fallback
+
+When no template exists, scripts must create a valid `.docx` using:
+
+- Body: Arial/微软雅黑, 11pt, black, 0pt before, 8pt after, 1.15 line spacing.
+- H1: 18pt bold, `#2E74B5`, 18pt before, 6pt after.
+- H2: 14pt bold, `#2E74B5`, 12pt before, 6pt after.
+- H3: 12pt bold, `#404040`, 10pt before, 4pt after.
+- H4: 11pt bold, `#404040`, 8pt before, 4pt after.
+- Page: A4, top/bottom 2.54cm, left/right 3.17cm.
+- Table header: `#2E74B5` background, white bold text.
+- Table body: alternating `#FFFFFF` and `#EAF0FB` rows.
 
 ## Hard Rules
 
-- Format priority is higher than content priority. If there is a conflict, preserve the Word template.
-- The bundled template is the only visual standard. Do not create new title, table, cover, header/footer or color styles in the generator.
-- Use Heading 1 to Heading 4 from the template for document hierarchy. Do not hand-write chapter numbers into Markdown.
-- Generate headings by cloning the template's heading paragraph prototypes, replacing text, and synchronizing heading style definitions with the prototype or numbering run properties so automatic numbering and heading text keep the same font, size and paragraph rules in Word/WPS.
-- Tables must inherit the template's table properties, first-row cell properties, body cell properties and alternating row properties when available.
-- Bullet numbering must not use Symbol or Wingdings fonts, because WPS may render those bullets as garbled characters. Normalize bullet numbering fonts during generation.
-- Body copy must be formal, concise, professional, consulting-style and technical-document-style; avoid 口语化、自媒体语气、ChatGPT 式总结腔 and repetitive "首先、其次、最后".
-- Do not use Pages as the finalization engine.
-- Do not require LibreOffice for default generation.
-- If LibreOffice finalization was not run, explicitly say the document was generated from the standard template and the TOC/page fields can be updated in Word/WPS if needed.
-- Do not overwrite the user's source files. Write outputs to `$HOME/Documents/AI-Stack-Outputs/word-docs` unless the user explicitly requests another path.
-- If the user requests automatic TOC/page refresh and LibreOffice is missing, explain the optional install command: `brew install --cask libreoffice`.
+- Never hand-insert Unicode bullets. Use Word list styles.
+- Never simulate headings with bold body text. Use Heading styles.
+- Never use Symbol or Wingdings fonts.
+- Never overwrite user source `.docx` files during repair.
+- Default output directory is `$HOME/Documents/AI-Stack-Outputs/word-docs`.
+- Do not require LibreOffice, Word, WPS, or Pandoc for default generation.
+- If LibreOffice is available and the user asks to refresh fields, run
+  `scripts/finalize_docx.sh`.
+
+## Dependencies
+
+Required:
+
+```bash
+pip install python-docx
+scripts/check_dependencies.sh
+```
+
+Optional field refresh:
+
+```bash
+brew install --cask libreoffice
+```
