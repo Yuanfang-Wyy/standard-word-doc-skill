@@ -319,6 +319,19 @@ def max_run_size(paragraph) -> float:
     return max((run_size_pt(run) or 0 for run in paragraph.runs), default=0)
 
 
+def strip_heading_number(text: str) -> str:
+    patterns = [
+        r"^第[一二三四五六七八九十百千万\d]+[章节部分篇][、.\s-]*",
+        r"^[一二三四五六七八九十]+[、.．]\s*",
+        r"^\d+(?:\.\d+)*[、.．\s-]+",
+        r"^[（(][一二三四五六七八九十\d]+[）)]\s*",
+    ]
+    cleaned = text.strip()
+    for pattern in patterns:
+        cleaned = re.sub(pattern, "", cleaned)
+    return cleaned.strip() or text.strip()
+
+
 def mapped_style_name(source_paragraph, target_doc) -> str:
     text = paragraph_text(source_paragraph)
     if not text:
@@ -355,6 +368,8 @@ def add_template_paragraph(target_doc, text: str, style_name: str) -> None:
     paragraph = target_doc.add_paragraph()
     safe_set_style(paragraph, style_name)
     cleaned = text.lstrip("".join(UNICODE_BULLETS)).strip() if text.lstrip().startswith(UNICODE_BULLETS) else text
+    if style_name.lower().startswith("heading"):
+        cleaned = strip_heading_number(cleaned)
     paragraph.add_run(cleaned)
 
 

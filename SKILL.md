@@ -80,6 +80,9 @@ python3 scripts/render_standard_docx.py input.md --output-dir "$HOME/Documents/A
    code blocks.
 5. Do not use Unicode bullet characters such as `•`, `·`, `◆`, `▪`, or `—` as
    manual bullets. Use Word list styles.
+6. Strip manual heading numbers such as `一、`, `第一章`, `1.1`, and `1.1.1`
+   before applying Word Heading styles. Word/WPS heading numbering supplies the
+   visible number.
 
 ## Pipeline C: Audit And Repair
 
@@ -114,6 +117,8 @@ Use this checklist for both auditing and repair. See
   apply Word `List Bullet`.
 - Body paragraph using inline bold plus size >= 14pt as a fake heading -> apply
   the matching Heading style.
+- Manual numbering at the start of Heading paragraphs, such as `一、`, `第一章`,
+  `1.1`, or `1.1.1` -> remove the manual number and keep the Heading style.
 - Symbol, Wingdings, Wingdings 2, or Wingdings 3 fonts -> replace with
   Arial/微软雅黑.
 - Hard line breaks inside a paragraph -> split into independent paragraphs.
@@ -128,6 +133,7 @@ Use this checklist for both auditing and repair. See
 ### Needs Human Confirmation: Report Only
 
 - Manual numbering such as `1.`, `（一）`, or `第一章` written in body style.
+  Heading-style manual numbering is repaired automatically.
 - Heading hierarchy jumps, such as H1 directly followed by H3.
 - Missing page-number field.
 - Full-width spaces or missing Chinese-English spacing in body text.

@@ -117,7 +117,8 @@ def cleanup_inline(text: str) -> str:
 def strip_heading_number(text: str) -> str:
     patterns = [
         r"^第[一二三四五六七八九十百千万\d]+[章节部分篇][、.\s-]*",
-        r"^\d+(?:\.\d+)*[、.\s-]+",
+        r"^[一二三四五六七八九十]+[、.．]\s*",
+        r"^\d+(?:\.\d+)*[、.．\s-]+",
         r"^[（(][一二三四五六七八九十\d]+[）)]\s*",
     ]
     cleaned = text.strip()
