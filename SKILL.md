@@ -17,9 +17,15 @@ This skill is a document template engine. Format consistency has priority over
 content richness. Prefer deterministic `.docx` generation and repair over
 manual visual tweaks.
 
-When available, inherit `assets/standard-word-template.docx`. If the template is
-missing, use the default style specification in `references/style-guide.md`
-instead of stopping.
+`assets/standard-word-template.docx` is the formatting authority. It is based on
+the Pudong feasibility-study document style. Except for document content, keep
+fonts, colors, headings, lists, tables, page setup, headers, footers, numbering,
+and spacing consistent with that template. Do not hard-code blue headings,
+colored table headers, Arial/微软雅黑, or other fallback styles when the template
+exists.
+
+If the template is missing, use the fallback style specification in
+`references/style-guide.md` instead of stopping.
 
 ## Workflow Decision
 
@@ -38,7 +44,7 @@ to `.docx`, then audit/repair the generated `.docx`.
 
 1. Identify document type: implementation plan, construction plan, test report,
    summary report, API detail design, data governance report, or other.
-2. Organize content into H1-H4 structure. Do not hard-code chapter numbers in
+2. Organize content into H1-H7 structure. Do not hard-code chapter numbers in
    body text; use Word Heading styles.
 3. Write a temporary Markdown file with frontmatter when useful:
 
@@ -89,9 +95,13 @@ For direct repair:
 python3 scripts/repair_standard_docx.py input.docx
 ```
 
-Repair output must not overwrite the source file. The repaired file uses the
-`_repaired.docx` suffix and a companion `_repair_summary.md` explains what was
-changed and what still requires human confirmation.
+Repair output must not overwrite the source file. When the template exists,
+repair rebuilds the document from `assets/standard-word-template.docx`: it
+extracts source content, recreates paragraphs and tables in document order, and
+applies the template's styles instead of preserving source direct formatting.
+The repaired file uses the `_repaired.docx` suffix and a companion
+`_repair_summary.md` explains what was changed and what still requires human
+confirmation.
 
 ## Format Checklist
 
@@ -110,8 +120,8 @@ Use this checklist for both auditing and repair. See
 
 ### Warnings: Repair When Safe And Report
 
-- Body text uses more than two different font sizes -> normalize body runs to
-  11pt.
+- Body text uses more than two different font sizes -> rebuild from template
+  when available; otherwise normalize body runs to the fallback body size.
 - Table width uses percent values -> convert tables to fixed DXA widths.
 - Consecutive empty paragraphs -> keep one and remove extras.
 
@@ -121,6 +131,20 @@ Use this checklist for both auditing and repair. See
 - Heading hierarchy jumps, such as H1 directly followed by H3.
 - Missing page-number field.
 - Full-width spaces or missing Chinese-English spacing in body text.
+
+## Template Formatting Rules
+
+When `assets/standard-word-template.docx` exists:
+
+- Treat the template as the only visual standard.
+- Use template styles such as `Title`, `Heading 1` through `Heading 7`,
+  `Body Ref`, `List Paragraph`, `Table Grid`, and `Footer` when present.
+- Keep template page sections, headers, footers, numbering, fonts, colors,
+  paragraph spacing, table style, and margins.
+- Do not apply direct run formatting unless needed to preserve code blocks in a
+  no-template fallback.
+- Do not keep source-document direct formatting during repair. Source content is
+  the input; template formatting is the output.
 
 ## Default Style Fallback
 

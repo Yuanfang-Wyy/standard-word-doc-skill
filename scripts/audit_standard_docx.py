@@ -57,13 +57,13 @@ def is_heading(paragraph) -> bool:
 
 def heading_level(paragraph) -> int | None:
     name = style_name(paragraph)
-    match = re.search(r"heading\s*([1-4])", name)
+    match = re.search(r"heading\s*([1-9])", name)
     if match:
         return int(match.group(1))
-    match = re.search(r"标题\s*([1-4一二三四])", name)
+    match = re.search(r"标题\s*([1-9一二三四五六七八九])", name)
     if match:
         raw = match.group(1)
-        return {"一": 1, "二": 2, "三": 3, "四": 4}.get(raw, int(raw) if raw.isdigit() else 0) or None
+        return {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}.get(raw, int(raw) if raw.isdigit() else 0) or None
     return None
 
 

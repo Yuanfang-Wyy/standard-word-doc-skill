@@ -30,16 +30,16 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 TEMPLATE = SKILL_DIR / "assets" / "standard-word-template.docx"
 DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "AI-Stack-Outputs" / "word-docs"
 
-WESTERN_FONT = "Arial"
-EAST_ASIA_FONT = "微软雅黑"
+WESTERN_FONT = "Times New Roman"
+EAST_ASIA_FONT = "仿宋"
 FORBIDDEN_BULLET_PREFIX = "•·◆▪●○■□—–"
 
 STYLE_SPEC = {
-    "Title": {"size": 24, "bold": True, "color": "1F3864", "before": 0, "after": 12, "line": 1.15},
-    "Heading 1": {"size": 18, "bold": True, "color": "2E74B5", "before": 18, "after": 6, "line": 1.15},
-    "Heading 2": {"size": 14, "bold": True, "color": "2E74B5", "before": 12, "after": 6, "line": 1.15},
-    "Heading 3": {"size": 12, "bold": True, "color": "404040", "before": 10, "after": 4, "line": 1.15},
-    "Heading 4": {"size": 11, "bold": True, "color": "404040", "before": 8, "after": 4, "line": 1.15},
+    "Title": {"size": 28, "bold": True, "color": "000000", "before": 0, "after": 4, "line": 1.0},
+    "Heading 1": {"size": 22, "bold": True, "color": "000000", "before": 24, "after": 4, "line": 1.5},
+    "Heading 2": {"size": 16, "bold": True, "color": "000000", "before": 8, "after": 4, "line": 1.5},
+    "Heading 3": {"size": 15, "bold": True, "color": "000000", "before": 8, "after": 4, "line": 1.5},
+    "Heading 4": {"size": 14, "bold": True, "color": "000000", "before": 4, "after": 2, "line": 1.5},
     "Normal": {"size": 11, "bold": False, "color": "000000", "before": 0, "after": 8, "line": 1.15},
     "Body Text": {"size": 11, "bold": False, "color": "000000", "before": 0, "after": 8, "line": 1.15},
     "List Bullet": {"size": 11, "bold": False, "color": "000000", "before": 0, "after": 6, "line": 1.15},
@@ -320,25 +320,26 @@ def set_paragraph_style(paragraph, style_name: str) -> None:
         paragraph.style = "Normal"
 
 
-def add_text_paragraph(doc, text: str, style_name: str = "Normal", *, align=None):
+def add_text_paragraph(doc, text: str, style_name: str = "Normal", *, align=None, direct_format: bool = True):
     paragraph = doc.add_paragraph()
     set_paragraph_style(paragraph, style_name)
     if align is not None:
         paragraph.alignment = align
-    spec = STYLE_SPEC.get(style_name, STYLE_SPEC["Normal"])
-    apply_paragraph_format(paragraph, spec["before"], spec["after"], spec["line"])
     run = paragraph.add_run(text)
-    apply_run_format(run, spec["size"], spec["bold"], spec["color"])
+    if direct_format:
+        spec = STYLE_SPEC.get(style_name, STYLE_SPEC["Normal"])
+        apply_paragraph_format(paragraph, spec["before"], spec["after"], spec["line"])
+        apply_run_format(run, spec["size"], spec["bold"], spec["color"])
     return paragraph
 
 
-def add_heading(doc, text: str, level: int) -> None:
+def add_heading(doc, text: str, level: int, *, direct_format: bool = True) -> None:
     style_name = f"Heading {min(max(level, 1), 4)}"
-    add_text_paragraph(doc, strip_heading_number(text), style_name)
+    add_text_paragraph(doc, strip_heading_number(text), style_name, direct_format=direct_format)
 
 
-def add_list_item(doc, text: str, style_name: str, indent: int) -> None:
-    paragraph = add_text_paragraph(doc, text, style_name)
+def add_list_item(doc, text: str, style_name: str, indent: int, *, direct_format: bool = True) -> None:
+    paragraph = add_text_paragraph(doc, text, style_name, direct_format=direct_format)
     if indent:
         paragraph.paragraph_format.left_indent = Cm(0.75 * indent)
 
@@ -372,8 +373,8 @@ def add_page_number_footer(doc) -> None:
         apply_run_format(run, 9, False, "808080")
 
 
-def add_toc_placeholder(doc) -> None:
-    title = add_text_paragraph(doc, "目 录", "Heading 1", align=WD_ALIGN_PARAGRAPH.CENTER)
+def add_toc_placeholder(doc, *, direct_format: bool = True) -> None:
+    title = add_text_paragraph(doc, "目 录", "Heading 1", align=WD_ALIGN_PARAGRAPH.CENTER, direct_format=direct_format)
     title.paragraph_format.space_before = Pt(0)
     paragraph = doc.add_paragraph()
     set_paragraph_style(paragraph, "Normal")
@@ -384,7 +385,7 @@ def add_toc_placeholder(doc) -> None:
     doc.add_page_break()
 
 
-def add_cover(doc, meta: dict[str, str], blocks: list[Block]) -> None:
+def add_cover(doc, meta: dict[str, str], blocks: list[Block], *, direct_format: bool = True) -> None:
     title = document_title(meta, blocks)
     doc_type = document_type(meta, blocks)
     organization = meta.get("organization") or meta.get("编制单位") or "XXXX单位"
@@ -392,8 +393,8 @@ def add_cover(doc, meta: dict[str, str], blocks: list[Block]) -> None:
     version = meta.get("version") or meta.get("版本") or "V1.0"
     doc_date = meta.get("date") or meta.get("日期") or f"{date.today():%Y年%m月%d日}"
 
-    add_text_paragraph(doc, title, "Title", align=WD_ALIGN_PARAGRAPH.CENTER)
-    add_text_paragraph(doc, doc_type, "Title", align=WD_ALIGN_PARAGRAPH.CENTER)
+    add_text_paragraph(doc, title, "Title", align=WD_ALIGN_PARAGRAPH.CENTER, direct_format=direct_format)
+    add_text_paragraph(doc, doc_type, "Title", align=WD_ALIGN_PARAGRAPH.CENTER, direct_format=direct_format)
     doc.add_paragraph()
     for line in (
         f"文件密级：{classification}",
@@ -401,7 +402,7 @@ def add_cover(doc, meta: dict[str, str], blocks: list[Block]) -> None:
         f"编制日期：{doc_date}",
         f"版本号：{version}",
     ):
-        add_text_paragraph(doc, line, "Normal", align=WD_ALIGN_PARAGRAPH.CENTER)
+        add_text_paragraph(doc, line, "Normal", align=WD_ALIGN_PARAGRAPH.CENTER, direct_format=direct_format)
     doc.add_page_break()
 
 
@@ -442,21 +443,26 @@ def set_table_width(table, width_emu: int) -> None:
     tbl_w.set(qn("w:w"), str(int(width_emu / 635)))
 
 
-def apply_cell_text(cell, text: str, *, header: bool) -> None:
+def apply_cell_text(cell, text: str, *, header: bool, direct_format: bool = True) -> None:
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     paragraph = cell.paragraphs[0]
     paragraph.clear()
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if header else WD_ALIGN_PARAGRAPH.LEFT
-    apply_paragraph_format(paragraph, 2, 2, 1.0)
     run = paragraph.add_run(text)
-    apply_run_format(run, 10, header, "FFFFFF" if header else "000000")
+    if direct_format:
+        apply_paragraph_format(paragraph, 2, 2, 1.0)
+        apply_run_format(run, 10, header, "FFFFFF" if header else "000000")
 
 
-def add_table(doc, rows: list[list[str]]) -> None:
+def add_table(doc, rows: list[list[str]], *, direct_format: bool = True) -> None:
     if not rows:
         return
     cols = max(len(row) for row in rows)
     table = doc.add_table(rows=len(rows), cols=cols)
+    try:
+        table.style = "Table Grid"
+    except KeyError:
+        pass
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
     section = doc.sections[0]
@@ -470,15 +476,16 @@ def add_table(doc, rows: list[list[str]]) -> None:
             cell.width = col_width
             text = row[col_index] if col_index < len(row) else ""
             is_header = row_index == 0
-            set_cell_shading(cell, "2E74B5" if is_header else ("FFFFFF" if row_index % 2 else "EAF0FB"))
-            set_cell_border(cell)
-            apply_cell_text(cell, text, header=is_header)
+            if direct_format:
+                set_cell_shading(cell, "FFFFFF")
+                set_cell_border(cell)
+            apply_cell_text(cell, text, header=is_header, direct_format=direct_format)
     doc.add_paragraph()
 
 
-def add_code_block(doc, text: str, lang: str = "") -> None:
+def add_code_block(doc, text: str, lang: str = "", *, direct_format: bool = True) -> None:
     if lang:
-        add_text_paragraph(doc, f"代码示例（{lang}）", "Normal")
+        add_text_paragraph(doc, f"代码示例（{lang}）", "Normal", direct_format=direct_format)
     for line in text.splitlines() or [""]:
         paragraph = doc.add_paragraph()
         set_paragraph_style(paragraph, "Normal")
@@ -487,7 +494,8 @@ def add_code_block(doc, text: str, lang: str = "") -> None:
         paragraph.paragraph_format.space_after = Pt(0)
         paragraph.paragraph_format.line_spacing = 1.0
         run = paragraph.add_run(line)
-        apply_run_format(run, 9, False, "404040", monospace=True)
+        if direct_format:
+            apply_run_format(run, 9, False, "404040", monospace=True)
 
 
 def render(input_path: Path, output_dir: Path, filename: str | None, template_path: Path = TEMPLATE) -> Path:
@@ -497,14 +505,16 @@ def render(input_path: Path, output_dir: Path, filename: str | None, template_pa
     if not blocks:
         raise SystemExit("input markdown has no content")
 
-    doc = Document(str(template_path)) if template_path.exists() else Document()
+    use_template = template_path.exists()
+    doc = Document(str(template_path)) if use_template else Document()
     clear_document_body(doc)
-    configure_page(doc)
-    ensure_default_styles(doc)
-    add_page_number_footer(doc)
+    if not use_template:
+        configure_page(doc)
+        ensure_default_styles(doc)
+        add_page_number_footer(doc)
 
-    add_cover(doc, meta, blocks)
-    add_toc_placeholder(doc)
+    add_cover(doc, meta, blocks, direct_format=not use_template)
+    add_toc_placeholder(doc, direct_format=not use_template)
 
     title = document_title(meta, blocks)
     skipped_title = False
@@ -513,17 +523,19 @@ def render(input_path: Path, output_dir: Path, filename: str | None, template_pa
             if block.level == 1 and not skipped_title and block.text == title:
                 skipped_title = True
                 continue
-            add_heading(doc, block.text, block.level)
+            add_heading(doc, block.text, block.level, direct_format=not use_template)
         elif block.kind == "paragraph":
-            add_text_paragraph(doc, block.text, "Normal")
+            add_text_paragraph(doc, block.text, "Body Ref" if use_template and style_if_exists(doc, "Body Ref") else "Normal", direct_format=not use_template)
         elif block.kind == "bullet":
-            add_list_item(doc, block.text, "List Bullet", block.indent)
+            list_style = "List Paragraph" if use_template and style_if_exists(doc, "List Paragraph") else "List Bullet"
+            add_list_item(doc, block.text, list_style, block.indent, direct_format=not use_template)
         elif block.kind == "number":
-            add_list_item(doc, block.text, "List Number", block.indent)
+            list_style = "List Paragraph" if use_template and style_if_exists(doc, "List Paragraph") else "List Number"
+            add_list_item(doc, block.text, list_style, block.indent, direct_format=not use_template)
         elif block.kind == "table" and block.rows:
-            add_table(doc, block.rows)
+            add_table(doc, block.rows, direct_format=not use_template)
         elif block.kind == "code":
-            add_code_block(doc, block.text, block.lang)
+            add_code_block(doc, block.text, block.lang, direct_format=not use_template)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     out_name = filename or f"{sanitize_filename(document_title(meta, blocks))}.docx"

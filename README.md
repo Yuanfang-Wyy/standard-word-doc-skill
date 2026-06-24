@@ -2,13 +2,13 @@
 
 一个通用的企业级 Word 文档格式生成 Skill。它面向支持 `SKILL.md` 结构的 AI Agent / Skill Runtime，不绑定某一个具体工具。
 
-这个 Skill 的核心目标不是“自由生成内容”，而是基于脱敏 Word 模板稳定生成正式 `.docx` 材料，让输出结果更接近企业内部正式模板中的人工文档。
+这个 Skill 的核心目标不是“自由生成内容”，而是基于标准 Word 模板稳定生成正式 `.docx` 材料，让输出结果在内容之外的字体、颜色、标题、列表、表格、页边距、页眉页脚等格式与模板保持一致。
 
 ## 适用场景
 
 - 生成实施方案、建设方案、必要性分析、测试报告、总结报告、服务单材料等正式 Word 文档。
 - 将 Markdown 草稿转换成符合标准模板的 `.docx`。
-- 审计并修复已有 `.docx` 的标题、项目符号、字体、硬换行、表格宽度和空段落问题。
+- 审计并修复已有 `.docx` 的标题、项目符号、字体、颜色、硬换行、表格宽度和空段落问题。
 - 团队统一 Word 材料格式，减少人工排版和模板走样。
 
 ## 安装
@@ -75,7 +75,7 @@ python3 scripts/render_standard_docx.py examples/sanitized-template-source.md
 python3 scripts/audit_standard_docx.py input.docx
 ```
 
-直接修复已有 Word，不覆盖原文件：
+直接修复已有 Word，不覆盖原文件。存在模板时，修复会从模板重建文档格式：源文件只提供内容，模板提供全部格式。
 
 ```bash
 python3 scripts/repair_standard_docx.py input.docx
@@ -113,12 +113,12 @@ date: 二〇二六年
 正文内容。
 ```
 
-标题层级会映射到模板中的 `Heading 1` 到 `Heading 4`，自动编号由 Word 多级编号体系产生，不建议在 Markdown 中手写“第一章”“1.1”等编号。
+标题层级会映射到模板中的 `Heading 1` 到 `Heading 7`，自动编号由 Word 多级编号体系产生，不建议在 Markdown 中手写“第一章”“1.1”等编号。
 
 ## 模板说明
 
-- `assets/standard-word-template.docx` 是脱敏模板，只保留通用版式、标题体系、自动编号、表格样式、页眉页脚和目录字段。
-- 公开仓库不包含项目正文、客户名称、个人路径、服务器地址、Token 或内部材料。
+- `assets/standard-word-template.docx` 是格式基准模板。后续生成和修复应继承其中的字体、颜色、标题体系、编号、表格样式、页眉页脚、目录字段和页面设置。
+- 公开仓库不应包含客户敏感正文、个人路径、服务器地址、Token 或内部密钥。
 - 如需替换为团队自己的模板，请保持文件名为 `assets/standard-word-template.docx`，并确保模板中存在标题样式、正文样式、表格样式、目录字段和页脚页码。
 
 ## 依赖说明

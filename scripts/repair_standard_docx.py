@@ -11,6 +11,7 @@ from pathlib import Path
 try:
     from docx import Document
     from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.table import Table
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
     from docx.shared import Pt
@@ -30,11 +31,14 @@ from audit_standard_docx import (
     paragraph_text,
     run_font_names,
     run_size_pt,
+    style_name,
 )
 
 
-WESTERN_FONT = "Arial"
-EAST_ASIA_FONT = "微软雅黑"
+SKILL_DIR = Path(__file__).resolve().parents[1]
+TEMPLATE = SKILL_DIR / "assets" / "standard-word-template.docx"
+WESTERN_FONT = "Times New Roman"
+EAST_ASIA_FONT = "仿宋"
 
 
 def set_font_east_asia(run, western: str = WESTERN_FONT, east_asia: str = EAST_ASIA_FONT) -> None:
@@ -58,6 +62,33 @@ def safe_set_style(paragraph, style_name: str) -> None:
         paragraph.style = style_name
     except KeyError:
         paragraph.style = "Normal"
+
+
+def style_exists(doc, style_name: str) -> bool:
+    try:
+        doc.styles[style_name]
+        return True
+    except KeyError:
+        return False
+
+
+def body_style_name(doc) -> str:
+    return "Body Ref" if style_exists(doc, "Body Ref") else "Normal"
+
+
+def list_style_name(doc) -> str:
+    if style_exists(doc, "List Paragraph"):
+        return "List Paragraph"
+    if style_exists(doc, "List Bullet"):
+        return "List Bullet"
+    return body_style_name(doc)
+
+
+def clear_document_body(doc) -> None:
+    body = doc._body._element
+    for child in list(body):
+        if child.tag != qn("w:sectPr"):
+            body.remove(child)
 
 
 def rewrite_paragraph(paragraph, text: str, style_name: str | None = None) -> None:
@@ -216,6 +247,102 @@ def repair_empty_paragraphs(doc) -> int:
     return removed
 
 
+def iter_body_blocks(doc):
+    body = doc.element.body
+    for child in body.iterchildren():
+        if child.tag == qn("w:p"):
+            yield Paragraph(child, doc._body)
+        elif child.tag == qn("w:tbl"):
+            yield Table(child, doc._body)
+
+
+def max_run_size(paragraph) -> float:
+    return max((run_size_pt(run) or 0 for run in paragraph.runs), default=0)
+
+
+def mapped_style_name(source_paragraph, target_doc) -> str:
+    text = paragraph_text(source_paragraph)
+    if not text:
+        return body_style_name(target_doc)
+
+    source_level = heading_level(source_paragraph)
+    if source_level is not None:
+        heading_style = f"Heading {source_level}"
+        return heading_style if style_exists(target_doc, heading_style) else body_style_name(target_doc)
+
+    if looks_fake_heading(source_paragraph):
+        size = max_run_size(source_paragraph)
+        if size >= 22 and style_exists(target_doc, "Title"):
+            return "Title"
+        if size >= 18 and style_exists(target_doc, "Heading 1"):
+            return "Heading 1"
+        if size >= 14 and style_exists(target_doc, "Heading 2"):
+            return "Heading 2"
+        if size >= 12 and style_exists(target_doc, "Heading 3"):
+            return "Heading 3"
+
+    style = style_name(source_paragraph)
+    stripped = text.lstrip()
+    if "list" in style or "列表" in style or stripped.startswith(UNICODE_BULLETS):
+        return list_style_name(target_doc)
+
+    if max_run_size(source_paragraph) >= 24 and len(text) <= 80 and style_exists(target_doc, "Title"):
+        return "Title"
+
+    return body_style_name(target_doc)
+
+
+def add_template_paragraph(target_doc, text: str, style_name: str) -> None:
+    paragraph = target_doc.add_paragraph()
+    safe_set_style(paragraph, style_name)
+    cleaned = text.lstrip("".join(UNICODE_BULLETS)).strip() if text.lstrip().startswith(UNICODE_BULLETS) else text
+    paragraph.add_run(cleaned)
+
+
+def add_template_table(target_doc, source_table) -> None:
+    rows = source_table.rows
+    if not rows:
+        return
+    col_count = max((len(row.cells) for row in rows), default=0)
+    if col_count == 0:
+        return
+
+    table = target_doc.add_table(rows=len(rows), cols=col_count)
+    try:
+        table.style = "Table Grid"
+    except KeyError:
+        pass
+    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+    for row_index, row in enumerate(rows):
+        for col_index in range(col_count):
+            target_cell = table.cell(row_index, col_index)
+            source_text = ""
+            if col_index < len(row.cells):
+                source_text = "\n".join(p.text.strip() for p in row.cells[col_index].paragraphs if p.text.strip())
+            paragraph = target_cell.paragraphs[0]
+            safe_set_style(paragraph, body_style_name(target_doc))
+            paragraph.clear()
+            paragraph.add_run(source_text)
+
+
+def rebuild_from_template(input_path: Path, output_path: Path) -> None:
+    source_doc = Document(str(input_path))
+    target_doc = Document(str(TEMPLATE))
+    clear_document_body(target_doc)
+
+    for block in iter_body_blocks(source_doc):
+        if isinstance(block, Paragraph):
+            text = block.text.strip()
+            if not text:
+                continue
+            add_template_paragraph(target_doc, text, mapped_style_name(block, target_doc))
+        elif isinstance(block, Table):
+            add_template_table(target_doc, block)
+
+    target_doc.save(output_path)
+
+
 def output_paths(input_path: Path, output: Path | None) -> tuple[Path, Path]:
     if output:
         repaired = output
@@ -256,6 +383,15 @@ def repair(input_path: Path, output: Path | None = None) -> tuple[Path, Path]:
         raise SystemExit("only .docx is supported")
 
     before = collect_issues(input_path)
+    repaired_path, summary_path = output_paths(input_path, output)
+    repaired_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if TEMPLATE.exists():
+        rebuild_from_template(input_path, repaired_path)
+        after = collect_issues(repaired_path)
+        write_summary(input_path, repaired_path, summary_path, before, after, Counter({"TEMPLATE_REBUILD": 1}))
+        return repaired_path, summary_path
+
     before_rule_ids = {issue.rule_id for issue in before}
     doc = Document(str(input_path))
     fixes: Counter = Counter()
@@ -283,8 +419,6 @@ def repair(input_path: Path, output: Path | None = None) -> tuple[Path, Path]:
     if empty_changes:
         fixes["W003"] += empty_changes
 
-    repaired_path, summary_path = output_paths(input_path, output)
-    repaired_path.parent.mkdir(parents=True, exist_ok=True)
     doc.save(repaired_path)
     after = collect_issues(repaired_path)
     write_summary(input_path, repaired_path, summary_path, before, after, fixes)
