@@ -40,6 +40,7 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 TEMPLATE = SKILL_DIR / "assets" / "standard-word-template.docx"
 WESTERN_FONT = "Times New Roman"
 EAST_ASIA_FONT = "仿宋"
+PARALLEL_BULLET = "◆"
 STANDARD_TABLE = {
     "header_fill": "1F5FAE",
     "odd_fill": "F3F6FB",
@@ -266,7 +267,7 @@ def apply_standard_cell_text(cell, text: str, *, header: bool) -> None:
     run = paragraph.add_run(text)
     set_font_east_asia(run)
     run.font.size = Pt(STANDARD_TABLE["font_size"])
-    run.font.bold = True
+    run.font.bold = header
     run.font.color.rgb = hex_to_rgb(STANDARD_TABLE["header_color"] if header else STANDARD_TABLE["body_color"])
 
 
@@ -355,7 +356,7 @@ def mapped_style_name(source_paragraph, target_doc) -> str:
 
     style = style_name(source_paragraph)
     stripped = text.lstrip()
-    if "list" in style or "列表" in style or stripped.startswith(UNICODE_BULLETS):
+    if "list" in style or "列表" in style or stripped.startswith(UNICODE_BULLETS) or stripped.startswith(PARALLEL_BULLET):
         return list_style_name(target_doc)
 
     if max_run_size(source_paragraph) >= 24 and len(text) <= 80 and style_exists(target_doc, "Title"):
@@ -367,9 +368,13 @@ def mapped_style_name(source_paragraph, target_doc) -> str:
 def add_template_paragraph(target_doc, text: str, style_name: str) -> None:
     paragraph = target_doc.add_paragraph()
     safe_set_style(paragraph, style_name)
-    cleaned = text.lstrip("".join(UNICODE_BULLETS)).strip() if text.lstrip().startswith(UNICODE_BULLETS) else text
+    bullet_chars = "".join(UNICODE_BULLETS) + PARALLEL_BULLET
+    stripped = text.lstrip()
+    cleaned = stripped.lstrip(bullet_chars).strip() if stripped.startswith(tuple(bullet_chars)) else text
     if style_name.lower().startswith("heading"):
         cleaned = strip_heading_number(cleaned)
+    if "list" in style_name.lower() or "列表" in style_name:
+        cleaned = f"{PARALLEL_BULLET}{cleaned.lstrip(PARALLEL_BULLET).strip()}"
     paragraph.add_run(cleaned)
 
 

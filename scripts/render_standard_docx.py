@@ -32,7 +32,8 @@ DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "AI-Stack-Outputs" / "word-docs
 
 WESTERN_FONT = "Times New Roman"
 EAST_ASIA_FONT = "仿宋"
-FORBIDDEN_BULLET_PREFIX = "•·◆▪●○■□—–"
+FORBIDDEN_BULLET_PREFIX = "•·▪●○■□—–"
+PARALLEL_BULLET = "◆"
 
 STYLE_SPEC = {
     "Title": {"size": 28, "bold": True, "color": "000000", "before": 0, "after": 4, "line": 1.0},
@@ -349,7 +350,9 @@ def add_heading(doc, text: str, level: int, *, direct_format: bool = True) -> No
     add_text_paragraph(doc, strip_heading_number(text), style_name, direct_format=direct_format)
 
 
-def add_list_item(doc, text: str, style_name: str, indent: int, *, direct_format: bool = True) -> None:
+def add_list_item(doc, text: str, style_name: str, indent: int, *, direct_format: bool = True, diamond: bool = False) -> None:
+    if diamond:
+        text = f"{PARALLEL_BULLET}{text.lstrip(PARALLEL_BULLET).strip()}"
     paragraph = add_text_paragraph(doc, text, style_name, direct_format=direct_format)
     if indent:
         paragraph.paragraph_format.left_indent = Cm(0.75 * indent)
@@ -464,7 +467,7 @@ def apply_cell_text(cell, text: str, *, header: bool) -> None:
     apply_run_format(
         run,
         STANDARD_TABLE["font_size"],
-        True,
+        header,
         STANDARD_TABLE["header_color"] if header else STANDARD_TABLE["body_color"],
     )
 
@@ -546,7 +549,7 @@ def render(input_path: Path, output_dir: Path, filename: str | None, template_pa
             add_text_paragraph(doc, block.text, "Body Ref" if use_template and style_if_exists(doc, "Body Ref") else "Normal", direct_format=not use_template)
         elif block.kind == "bullet":
             list_style = "List Paragraph" if use_template and style_if_exists(doc, "List Paragraph") else "List Bullet"
-            add_list_item(doc, block.text, list_style, block.indent, direct_format=not use_template)
+            add_list_item(doc, block.text, list_style, block.indent, direct_format=not use_template, diamond=True)
         elif block.kind == "number":
             list_style = "List Paragraph" if use_template and style_if_exists(doc, "List Paragraph") else "List Number"
             add_list_item(doc, block.text, list_style, block.indent, direct_format=not use_template)

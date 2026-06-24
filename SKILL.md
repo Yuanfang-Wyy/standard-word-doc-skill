@@ -78,8 +78,9 @@ python3 scripts/render_standard_docx.py input.md --output-dir "$HOME/Documents/A
 4. Run `scripts/render_standard_docx.py`. The script handles frontmatter,
    headings, body paragraphs, bullet lists, ordered lists, tables, and fenced
    code blocks.
-5. Do not use Unicode bullet characters such as `•`, `·`, `◆`, `▪`, or `—` as
-   manual bullets. Use Word list styles.
+5. For parallel items, use the approved black-diamond marker `◆` followed by
+   the item text. Do not use other decorative bullet characters such as `•`,
+   `·`, `▪`, or `—` as manual bullets.
 6. Strip manual heading numbers such as `一、`, `第一章`, `1.1`, and `1.1.1`
    before applying Word Heading styles. Word/WPS heading numbering supplies the
    visible number.
@@ -115,6 +116,7 @@ Use this checklist for both auditing and repair. See
 
 - Unicode bullet characters at paragraph start -> remove the character and
   apply Word `List Bullet`.
+- Parallel list paragraphs -> normalize to `◆内容`.
 - Body paragraph using inline bold plus size >= 14pt as a fake heading -> apply
   the matching Heading style.
 - Manual numbering at the start of Heading paragraphs, such as `一、`, `第一章`,
@@ -148,7 +150,7 @@ When `assets/standard-word-template.docx` exists:
 - Keep template page sections, headers, footers, numbering, fonts, colors,
   paragraph spacing, table style, and margins.
 - Override tables with the standard table style: blue header with white bold
-  centered text, black bold body text, light-blue/white alternating body rows,
+  centered text, black regular-weight body text, light-blue/white alternating body rows,
   and light-gray borders.
 - Do not apply direct run formatting unless needed to preserve code blocks in a
   no-template fallback or to enforce the standard table style.
@@ -166,11 +168,11 @@ When no template exists, scripts must create a valid `.docx` using:
 - H4: 14pt bold, black, 4pt before, 2pt after.
 - Page: A4, top/bottom 2.54cm, left/right 3.17cm.
 - Table header: `#1F5FAE` background, white bold centered text.
-- Table body: alternating `#F3F6FB` and `#FFFFFF` rows, black bold text.
+- Table body: alternating `#F3F6FB` and `#FFFFFF` rows, black regular-weight text.
 
 ## Hard Rules
 
-- Never hand-insert Unicode bullets. Use Word list styles.
+- Never use unapproved Unicode bullets. Use `◆` only for parallel list items.
 - Never simulate headings with bold body text. Use Heading styles.
 - Never use Symbol or Wingdings fonts.
 - Never overwrite user source `.docx` files during repair.

@@ -21,7 +21,7 @@ DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "AI-Stack-Outputs" / "word-docs
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 NS = {"w": W_NS}
 
-UNICODE_BULLETS = tuple("•·◆▪●○■□—–")
+UNICODE_BULLETS = tuple("•·▪●○■□—–")
 UNSAFE_FONTS = {"symbol", "wingdings", "wingdings 2", "wingdings 3"}
 
 
