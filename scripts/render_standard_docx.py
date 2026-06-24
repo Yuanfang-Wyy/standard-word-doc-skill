@@ -46,6 +46,16 @@ STYLE_SPEC = {
     "List Number": {"size": 11, "bold": False, "color": "000000", "before": 0, "after": 6, "line": 1.15},
 }
 
+STANDARD_TABLE = {
+    "header_fill": "1F5FAE",
+    "odd_fill": "F3F6FB",
+    "even_fill": "FFFFFF",
+    "border": "C9C9C9",
+    "header_color": "FFFFFF",
+    "body_color": "000000",
+    "font_size": 12,
+}
+
 
 @dataclass
 class Block:
@@ -415,7 +425,7 @@ def set_cell_shading(cell, fill: str) -> None:
     shd.set(qn("w:fill"), fill)
 
 
-def set_cell_border(cell, color: str = "CCCCCC", size: str = "4") -> None:
+def set_cell_border(cell, color: str = STANDARD_TABLE["border"], size: str = "8") -> None:
     tc_pr = cell._tc.get_or_add_tcPr()
     borders = tc_pr.find(qn("w:tcBorders"))
     if borders is None:
@@ -443,15 +453,19 @@ def set_table_width(table, width_emu: int) -> None:
     tbl_w.set(qn("w:w"), str(int(width_emu / 635)))
 
 
-def apply_cell_text(cell, text: str, *, header: bool, direct_format: bool = True) -> None:
+def apply_cell_text(cell, text: str, *, header: bool) -> None:
     cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
     paragraph = cell.paragraphs[0]
     paragraph.clear()
     paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if header else WD_ALIGN_PARAGRAPH.LEFT
     run = paragraph.add_run(text)
-    if direct_format:
-        apply_paragraph_format(paragraph, 2, 2, 1.0)
-        apply_run_format(run, 10, header, "FFFFFF" if header else "000000")
+    apply_paragraph_format(paragraph, 4, 4, 1.15)
+    apply_run_format(
+        run,
+        STANDARD_TABLE["font_size"],
+        True,
+        STANDARD_TABLE["header_color"] if header else STANDARD_TABLE["body_color"],
+    )
 
 
 def add_table(doc, rows: list[list[str]], *, direct_format: bool = True) -> None:
@@ -476,10 +490,13 @@ def add_table(doc, rows: list[list[str]], *, direct_format: bool = True) -> None
             cell.width = col_width
             text = row[col_index] if col_index < len(row) else ""
             is_header = row_index == 0
-            if direct_format:
-                set_cell_shading(cell, "FFFFFF")
-                set_cell_border(cell)
-            apply_cell_text(cell, text, header=is_header, direct_format=direct_format)
+            if is_header:
+                fill = STANDARD_TABLE["header_fill"]
+            else:
+                fill = STANDARD_TABLE["odd_fill"] if row_index % 2 == 1 else STANDARD_TABLE["even_fill"]
+            set_cell_shading(cell, fill)
+            set_cell_border(cell)
+            apply_cell_text(cell, text, header=is_header)
     doc.add_paragraph()
 
 

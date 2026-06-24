@@ -17,12 +17,12 @@ This skill is a document template engine. Format consistency has priority over
 content richness. Prefer deterministic `.docx` generation and repair over
 manual visual tweaks.
 
-`assets/standard-word-template.docx` is the formatting authority. It is based on
-the Pudong feasibility-study document style. Except for document content, keep
-fonts, colors, headings, lists, tables, page setup, headers, footers, numbering,
-and spacing consistent with that template. Do not hard-code blue headings,
-colored table headers, Arial/微软雅黑, or other fallback styles when the template
-exists.
+`assets/standard-word-template.docx` is the formatting authority for headings,
+body text, lists, page setup, headers, footers, numbering, and spacing. It is
+based on the Pudong feasibility-study document style. Tables are the explicit
+exception: always use the standard blue-header table style described in
+`references/style-guide.md`. Do not hard-code blue headings, Arial/微软雅黑, or
+other fallback styles when the template exists.
 
 If the template is missing, use the fallback style specification in
 `references/style-guide.md` instead of stopping.
@@ -141,8 +141,11 @@ When `assets/standard-word-template.docx` exists:
   `Body Ref`, `List Paragraph`, `Table Grid`, and `Footer` when present.
 - Keep template page sections, headers, footers, numbering, fonts, colors,
   paragraph spacing, table style, and margins.
+- Override tables with the standard table style: blue header with white bold
+  centered text, black bold body text, light-blue/white alternating body rows,
+  and light-gray borders.
 - Do not apply direct run formatting unless needed to preserve code blocks in a
-  no-template fallback.
+  no-template fallback or to enforce the standard table style.
 - Do not keep source-document direct formatting during repair. Source content is
   the input; template formatting is the output.
 
@@ -151,13 +154,13 @@ When `assets/standard-word-template.docx` exists:
 When no template exists, scripts must create a valid `.docx` using:
 
 - Body: Arial/微软雅黑, 11pt, black, 0pt before, 8pt after, 1.15 line spacing.
-- H1: 18pt bold, `#2E74B5`, 18pt before, 6pt after.
-- H2: 14pt bold, `#2E74B5`, 12pt before, 6pt after.
-- H3: 12pt bold, `#404040`, 10pt before, 4pt after.
-- H4: 11pt bold, `#404040`, 8pt before, 4pt after.
+- H1: 22pt bold, black, 24pt before, 4pt after.
+- H2: 16pt bold, black, 8pt before, 4pt after.
+- H3: 15pt bold, black, 8pt before, 4pt after.
+- H4: 14pt bold, black, 4pt before, 2pt after.
 - Page: A4, top/bottom 2.54cm, left/right 3.17cm.
-- Table header: `#2E74B5` background, white bold text.
-- Table body: alternating `#FFFFFF` and `#EAF0FB` rows.
+- Table header: `#1F5FAE` background, white bold centered text.
+- Table body: alternating `#F3F6FB` and `#FFFFFF` rows, black bold text.
 
 ## Hard Rules
 

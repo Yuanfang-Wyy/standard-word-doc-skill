@@ -10,11 +10,12 @@ from pathlib import Path
 
 try:
     from docx import Document
-    from docx.enum.table import WD_TABLE_ALIGNMENT
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
     from docx.table import Table
     from docx.oxml import OxmlElement
     from docx.oxml.ns import qn
-    from docx.shared import Pt
+    from docx.shared import Pt, RGBColor
     from docx.text.paragraph import Paragraph
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("missing dependency: python-docx. Install with: pip install python-docx") from exc
@@ -39,6 +40,15 @@ SKILL_DIR = Path(__file__).resolve().parents[1]
 TEMPLATE = SKILL_DIR / "assets" / "standard-word-template.docx"
 WESTERN_FONT = "Times New Roman"
 EAST_ASIA_FONT = "仿宋"
+STANDARD_TABLE = {
+    "header_fill": "1F5FAE",
+    "odd_fill": "F3F6FB",
+    "even_fill": "FFFFFF",
+    "border": "C9C9C9",
+    "header_color": "FFFFFF",
+    "body_color": "000000",
+    "font_size": 12,
+}
 
 
 def set_font_east_asia(run, western: str = WESTERN_FONT, east_asia: str = EAST_ASIA_FONT) -> None:
@@ -55,6 +65,11 @@ def set_font_east_asia(run, western: str = WESTERN_FONT, east_asia: str = EAST_A
         ("w:eastAsia", east_asia),
     ):
         rfonts.set(qn(attr), value)
+
+
+def hex_to_rgb(value: str) -> RGBColor:
+    value = value.strip().lstrip("#")
+    return RGBColor(int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16))
 
 
 def safe_set_style(paragraph, style_name: str) -> None:
@@ -211,6 +226,50 @@ def set_table_width(table, width_emu: int) -> None:
     tbl_w.set(qn("w:w"), str(int(width_emu / 635)))
 
 
+def set_cell_shading(cell, fill: str) -> None:
+    tc_pr = cell._tc.get_or_add_tcPr()
+    shd = tc_pr.find(qn("w:shd"))
+    if shd is None:
+        shd = OxmlElement("w:shd")
+        tc_pr.append(shd)
+    shd.set(qn("w:fill"), fill)
+
+
+def set_cell_border(cell, color: str = STANDARD_TABLE["border"], size: str = "8") -> None:
+    tc_pr = cell._tc.get_or_add_tcPr()
+    borders = tc_pr.find(qn("w:tcBorders"))
+    if borders is None:
+        borders = OxmlElement("w:tcBorders")
+        tc_pr.append(borders)
+    for edge in ("top", "left", "bottom", "right"):
+        tag = qn(f"w:{edge}")
+        element = borders.find(tag)
+        if element is None:
+            element = OxmlElement(f"w:{edge}")
+            borders.append(element)
+        element.set(qn("w:val"), "single")
+        element.set(qn("w:sz"), size)
+        element.set(qn("w:space"), "0")
+        element.set(qn("w:color"), color)
+
+
+def apply_standard_cell_text(cell, text: str, *, header: bool) -> None:
+    cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    paragraph = cell.paragraphs[0]
+    paragraph.clear()
+    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER if header else WD_ALIGN_PARAGRAPH.LEFT
+    paragraph.paragraph_format.first_line_indent = None
+    paragraph.paragraph_format.left_indent = None
+    paragraph.paragraph_format.space_before = Pt(4)
+    paragraph.paragraph_format.space_after = Pt(4)
+    paragraph.paragraph_format.line_spacing = 1.15
+    run = paragraph.add_run(text)
+    set_font_east_asia(run)
+    run.font.size = Pt(STANDARD_TABLE["font_size"])
+    run.font.bold = True
+    run.font.color.rgb = hex_to_rgb(STANDARD_TABLE["header_color"] if header else STANDARD_TABLE["body_color"])
+
+
 def repair_tables(doc) -> int:
     if not doc.tables:
         return 0
@@ -313,17 +372,27 @@ def add_template_table(target_doc, source_table) -> None:
     except KeyError:
         pass
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.autofit = False
+    section = target_doc.sections[0]
+    content_width = int(section.page_width - section.left_margin - section.right_margin)
+    set_table_width(table, content_width)
+    col_width = int(content_width / col_count)
 
     for row_index, row in enumerate(rows):
         for col_index in range(col_count):
             target_cell = table.cell(row_index, col_index)
+            target_cell.width = col_width
             source_text = ""
             if col_index < len(row.cells):
                 source_text = "\n".join(p.text.strip() for p in row.cells[col_index].paragraphs if p.text.strip())
-            paragraph = target_cell.paragraphs[0]
-            safe_set_style(paragraph, body_style_name(target_doc))
-            paragraph.clear()
-            paragraph.add_run(source_text)
+            is_header = row_index == 0
+            if is_header:
+                fill = STANDARD_TABLE["header_fill"]
+            else:
+                fill = STANDARD_TABLE["odd_fill"] if row_index % 2 == 1 else STANDARD_TABLE["even_fill"]
+            set_cell_shading(target_cell, fill)
+            set_cell_border(target_cell)
+            apply_standard_cell_text(target_cell, source_text, header=is_header)
 
 
 def rebuild_from_template(input_path: Path, output_path: Path) -> None:
